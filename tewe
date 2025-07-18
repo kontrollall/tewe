@@ -39,14 +39,17 @@ local seedList = {
     "Cacao", "Beanstalk", "Ember lily", "Sugar Apple", "Burning Bud", "Giant Pinecode"
 }
 
+-- Variáveis
 local selectedSeed = seedList[1]
 local autoBuyEnabled = false
 
+-- Dropdown para escolher semente
 Section:CreateDropdown("Escolha a Semente", seedList, 1, function(seed)
     selectedSeed = seed
     print("[AutoBuy] Semente selecionada:", selectedSeed)
 end)
 
+-- Auto Buy toggle
 Section:CreateToggle("Auto Buy", function(toggle)
     autoBuyEnabled = toggle
     if autoBuyEnabled then
@@ -64,14 +67,16 @@ Section:CreateToggle("Auto Buy", function(toggle)
     end
 end)
 
--- Auto Collect otimizado
+-- Novo Auto Collect otimizado (sem lag)
 local autoCollectEnabled = false
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
+local RunService = game:GetService("RunService")
 
 local activated = {}
 local TRIGGER_DISTANCE = 10
 local validPrompts = {}
+local heartbeatConnection
 
 local function getRoot()
     local character = player.Character or player.CharacterAdded:Wait()
@@ -101,6 +106,7 @@ local function scanPrompt(prompt)
     end
 end
 
+-- Auto Collect Toggle
 Section:CreateToggle("Auto Collect", function(enabled)
     autoCollectEnabled = enabled
 
@@ -118,24 +124,50 @@ Section:CreateToggle("Auto Collect", function(enabled)
             end
         end)
 
-        -- Loop mais leve
-        task.spawn(function()
-            while autoCollectEnabled do
-                local success, root = pcall(getRoot)
-                if success and root then
-                    for _, prompt in ipairs(validPrompts) do
-                        if isPromptClose(prompt, root) then
-                            activatePrompt(prompt)
-                            break -- ativa um por vez para economizar FPS
-                        end
-                    end
+        local root = getRoot()
+        heartbeatConnection = RunService.Heartbeat:Connect(function()
+            if not autoCollectEnabled then
+                if heartbeatConnection then heartbeatConnection:Disconnect() end
+                return
+            end
+            for _, prompt in ipairs(validPrompts) do
+                if isPromptClose(prompt, root) then
+                    activatePrompt(prompt)
                 end
-                task.wait(0.3)
             end
         end)
     else
         print("[AutoCollect] Desativado")
+        if heartbeatConnection then heartbeatConnection:Disconnect() end
         validPrompts = {}
         activated = {}
     end
+end)
+
+-- Botão aprimorado: Sell All com TP suave e retorno
+local TweenService = game:GetService("TweenService")
+
+Section:CreateButton("Sell All", function()
+    local character = player.Character or player.CharacterAdded:Wait()
+    local rootPart = character:WaitForChild("HumanoidRootPart")
+    local originalCFrame = rootPart.CFrame
+    local sellPosition = Vector3.new(87, 3, 0) -- posição do botão sell
+
+    local tweenInfo = TweenInfo.new(1, Enum.EasingStyle.Linear)
+    local toSellTween = TweenService:Create(rootPart, tweenInfo, {CFrame = CFrame.new(sellPosition)})
+    toSellTween:Play()
+
+    -- Após 1 segundo, vender e retornar
+    task.delay(1, function()
+        local sellEvent = game:GetService("ReplicatedStorage"):WaitForChild("GameEvents"):FindFirstChild("Sell_Inventory")
+        if sellEvent and sellEvent:IsA("RemoteEvent") then
+            sellEvent:FireServer()
+            print("[Sell All] Inventário vendido.")
+        else
+            warn("[Sell All] RemoteEvent 'Sell_Inventory' não encontrado.")
+        end
+
+        local returnTween = TweenService:Create(rootPart, tweenInfo, {CFrame = originalCFrame})
+        returnTween:Play()
+    end)
 end)
